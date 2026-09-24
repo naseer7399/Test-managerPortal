@@ -202,6 +202,16 @@ a{ color: var(--primary); }
   background: var(--danger); color: #fff;
 }
 
+.icon-btn{
+  width: 34px; height: 34px; border-radius: 9px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.icon-btn:hover{ background: var(--surface-sunk); color: var(--ink); }
+.icon-btn svg{ width: 16px; height: 16px; }
+
 /* ---------------- Buttons ---------------- */
 .btn{
   display: inline-flex; align-items: center; gap: 7px;
