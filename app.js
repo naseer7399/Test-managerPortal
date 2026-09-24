@@ -623,23 +623,20 @@ function renderShell(){
     btn.addEventListener('click', () => navigate(btn.dataset.tab));
   });
   document.getElementById('btnLogout').addEventListener('click', logout);
+}
 
+// The Alerts bell is only meaningful on the Dashboard (a quick glance
+// at recent activity), so it's shown/hidden per tab here rather than
+// rendered once in renderShell.
+function renderTopbarActions(tab){
   const actions = document.getElementById('topbarActions');
-  if(actions){
-    actions.innerHTML = SESSION.role === 'management'
-      ? `<button class="topbar-bell" id="btnTopbarBell" aria-label="Alerts" title="Alerts">${ICONS.bell}<span class="nav-badge" id="alertBadge" style="display:none;"></span></button>`
-      : '';
-    const bellBtn = document.getElementById('btnTopbarBell');
-    if(bellBtn){
-      bellBtn.addEventListener('click', () => {
-        navigate('settings');
-        setTimeout(() => {
-          const el = document.getElementById('alertsSection');
-          if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
-        }, 30);
-      });
-    }
-  }
+  if(!actions) return;
+  const showBell = SESSION.role === 'management' && tab === 'dashboard';
+  actions.innerHTML = showBell
+    ? `<button class="topbar-bell" id="btnTopbarBell" aria-label="Alerts" title="Alerts">${ICONS.bell}<span class="nav-badge" id="alertBadge" style="display:none;"></span></button>`
+    : '';
+  const bellBtn = document.getElementById('btnTopbarBell');
+  if(bellBtn) bellBtn.addEventListener('click', openRecentActivityModal);
   updateAlertBadge();
 }
 
@@ -649,6 +646,7 @@ function navigate(tab, params){
   document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
+  renderTopbarActions(tab);
   const renderers = {
     dashboard: renderDashboard,
     students: renderStudents,
@@ -2046,66 +2044,51 @@ function loadNotificationHistory(){
 }
 
 /* ---------------------------------------------------------------
-   Alerts — internal Management notifications. Rendered as part of
-   Settings (see alertsSectionHTML/wireAlertsSection below); the
-   topbar bell button jumps straight to this section.
+   Alerts — internal Management notifications. "Recent activity" is
+   shown on the Settings page (alertsSectionHTML/wireAlertsSection)
+   and, on the Dashboard only, via the topbar bell's own modal
+   (openRecentActivityModal). "Alert types" now lives behind the gear
+   icon next to the Recent activity label in both places, as its own
+   modal (openAlertTypesModal).
    --------------------------------------------------------------- */
-function alertsSectionHTML(){
+function alertPopupPermissionNote(){
   const permission = (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported';
-  const permissionNote = permission === 'granted'
+  return permission === 'granted'
     ? `<span class="tag tag-active">Pop-ups allowed</span>`
     : permission === 'denied'
       ? `<span class="tag tag-pending">Pop-ups blocked in browser settings</span>`
       : permission === 'unsupported'
         ? `<span class="tag tag-inactive">Not supported on this device</span>`
         : `<span class="tag tag-partial">Pop-ups not yet allowed</span>`;
+}
 
+// Markup for the on/off switches for each alert type. Shared by the
+// Settings page and the "Alert types" modal opened from the gear icon
+// next to Recent activity.
+function alertTypeRowsHTML(){
+  const permission = (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported';
   return `
-    <div id="alertsSection">
-      <div class="panel">
-        <div class="panel-head">
-          <div><h3>Alert types</h3><div class="sub">Switch off any you don't need \u2014 switched-off types are neither logged nor shown as pop-ups.</div></div>
+    <div class="panel-body pad0">
+      ${ALERT_TYPES.map(t => `
+        <div class="alert-type-row">
+          <div class="atr-icon">${ICONS[t.icon] || ICONS.bell}</div>
+          <div class="atr-text"><div class="atr-label">${esc(t.label)}</div><div class="atr-desc">${esc(t.desc)}</div></div>
+          <label class="switch"><input type="checkbox" class="alertTypeToggle" data-type="${t.id}" ${DB.alertSettings[t.id] !== false ? 'checked' : ''}><span class="slider"></span></label>
         </div>
-        <div class="panel-body pad0">
-          ${ALERT_TYPES.map(t => `
-            <div class="alert-type-row">
-              <div class="atr-icon">${ICONS[t.icon] || ICONS.bell}</div>
-              <div class="atr-text"><div class="atr-label">${esc(t.label)}</div><div class="atr-desc">${esc(t.desc)}</div></div>
-              <label class="switch"><input type="checkbox" class="alertTypeToggle" data-type="${t.id}" ${DB.alertSettings[t.id] !== false ? 'checked' : ''}><span class="slider"></span></label>
-            </div>
-          `).join('')}
-          <div class="alert-type-row">
-            <div class="atr-icon">${ICONS.bell}</div>
-            <div class="atr-text"><div class="atr-label">Show pop-up on this device</div><div class="atr-desc">Also show a device notification when an enabled alert happens, while the app is open. ${permissionNote}</div></div>
-            <label class="switch"><input type="checkbox" id="desktopPopupsToggle" ${DB.alertSettings.desktopPopups !== false ? 'checked' : ''}><span class="slider"></span></label>
-          </div>
-        </div>
-        ${permission === 'default' ? `<div class="panel-body" style="padding-top:0;"><button class="btn btn-primary" id="btnEnablePopups">${ICONS.bell}Allow pop-up notifications</button></div>` : ''}
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <div><h3>Recent activity</h3><div class="sub">Newest first \u2014 kept on this device (and synced if cloud sync is on)</div></div>
-          <button class="btn" id="btnClearAlerts">Clear log</button>
-        </div>
-        <div class="panel-body pad0" id="alertLogWrap">
-          ${DB.alertLog.length ? `<div class="notif-history">${DB.alertLog.map(a => {
-            const meta = alertTypeMeta(a.type);
-            return `<div class="notif-history-row alert-row${a.read ? '' : ' unread'}">
-              <div class="nh-top">
-                <span class="tag tag-partial">${meta ? ICONS[meta.icon] || '' : ''}${esc(meta ? meta.label : a.type)}</span>
-                <span class="nh-time">${new Date(a.ts).toLocaleString('en-IN')}</span>
-              </div>
-              <div class="nh-title">${esc(a.title)}</div>
-              <div class="nh-msg">${esc(a.message)}</div>
-            </div>`;
-          }).join('')}</div>` : `<div class="empty-state">${ICONS.empty}<p>No activity yet. Alerts will appear here as students, fees and payments are recorded.</p></div>`}
-        </div>
+      `).join('')}
+      <div class="alert-type-row">
+        <div class="atr-icon">${ICONS.bell}</div>
+        <div class="atr-text"><div class="atr-label">Show pop-up on this device</div><div class="atr-desc">Also show a device notification when an enabled alert happens, while the app is open. ${alertPopupPermissionNote()}</div></div>
+        <label class="switch"><input type="checkbox" id="desktopPopupsToggle" ${DB.alertSettings.desktopPopups !== false ? 'checked' : ''}><span class="slider"></span></label>
       </div>
     </div>
+    ${permission === 'default' ? `<div class="panel-body" style="padding-top:0;"><button class="btn btn-primary" id="btnEnablePopups">${ICONS.bell}Allow pop-up notifications</button></div>` : ''}
   `;
 }
 
-function wireAlertsSection(){
+// Wires whatever alert-type toggles are currently in the DOM \u2014 works
+// whether they're on the Settings page or inside the Alert types modal.
+function wireAlertTypeToggles(onChangeRerender){
   document.querySelectorAll('.alertTypeToggle').forEach(cb => {
     cb.addEventListener('change', () => {
       DB.alertSettings[cb.dataset.type] = cb.checked;
@@ -2119,39 +2102,126 @@ function wireAlertsSection(){
       DB.alertSettings.desktopPopups = popupsToggle.checked;
       saveDB();
       if(popupsToggle.checked && typeof Notification !== 'undefined' && Notification.permission === 'default'){
-        requestAlertPermission(() => renderSettings());
+        requestAlertPermission(onChangeRerender);
       }
     });
   }
   const enableBtn = document.getElementById('btnEnablePopups');
   if(enableBtn){
-    enableBtn.addEventListener('click', () => requestAlertPermission(() => renderSettings()));
+    enableBtn.addEventListener('click', () => requestAlertPermission(onChangeRerender));
   }
-  const clearBtn = document.getElementById('btnClearAlerts');
-  if(clearBtn){
-    clearBtn.addEventListener('click', () => {
-      openModal({
-        title: 'Clear activity log?',
-        body: `<div class="modal-note danger">${ICONS.alert}This removes all logged alerts from this device. Alert type settings are kept.</div>`,
-        confirmLabel: 'Clear log',
-        danger: true,
-        onConfirm: () => {
-          DB.alertLog = [];
-          saveDB();
-          toast('Activity log cleared.');
-          renderSettings();
-          return true;
-        }
-      });
-    });
-  }
+}
 
-  // Viewing Settings marks alerts as read.
+// Opens "Alert types" as its own modal \u2014 reached via the gear icon
+// next to the Recent activity label (both on Settings and from the bell).
+function openAlertTypesModal(){
+  openModal({
+    title: 'Alert types',
+    body: `<p class="small-note" style="margin-bottom:12px;">Switch off any you don't need \u2014 switched-off types are neither logged nor shown as pop-ups.</p>${alertTypeRowsHTML()}`,
+    confirmLabel: 'Done',
+    onConfirm: () => true
+  });
+  wireAlertTypeToggles(() => { openAlertTypesModal(); });
+}
+
+// Markup for just the activity list rows. Shared by the Settings page
+// and the Recent activity modal opened from the topbar bell.
+function recentActivityRowsHTML(){
+  return DB.alertLog.length ? `<div class="notif-history">${DB.alertLog.map(a => {
+    const meta = alertTypeMeta(a.type);
+    return `<div class="notif-history-row alert-row${a.read ? '' : ' unread'}">
+      <div class="nh-top">
+        <span class="tag tag-partial">${meta ? ICONS[meta.icon] || '' : ''}${esc(meta ? meta.label : a.type)}</span>
+        <span class="nh-time">${new Date(a.ts).toLocaleString('en-IN')}</span>
+      </div>
+      <div class="nh-title">${esc(a.title)}</div>
+      <div class="nh-msg">${esc(a.message)}</div>
+    </div>`;
+  }).join('')}</div>` : `<div class="empty-state">${ICONS.empty}<p>No activity yet. Alerts will appear here as students, fees and payments are recorded.</p></div>`;
+}
+
+function clearActivityLog(onCleared){
+  openModal({
+    title: 'Clear activity log?',
+    body: `<div class="modal-note danger">${ICONS.alert}This removes all logged alerts from this device. Alert type settings are kept.</div>`,
+    confirmLabel: 'Clear log',
+    danger: true,
+    onConfirm: () => {
+      DB.alertLog = [];
+      saveDB();
+      toast('Activity log cleared.');
+      onCleared();
+      return true;
+    }
+  });
+}
+
+function markAlertsRead(){
   if(DB.alertLog.some(a => !a.read)){
     DB.alertLog.forEach(a => { a.read = true; });
     saveDB();
     updateAlertBadge();
   }
+}
+
+// Recent activity, opened from the topbar bell (Dashboard only). Shows
+// only the activity log, with a gear icon that opens Alert types.
+function openRecentActivityModal(){
+  openModal({
+    title: '',
+    body: `
+      <div class="panel-head" style="padding:0 0 14px;margin:-4px 0 14px;border-bottom:1px solid var(--line);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="icon-btn" id="btnAlertTypesFromPopover" aria-label="Alert types" title="Alert types">${ICONS.settings}</button>
+          <h3 style="font-size:15.5px;">Recent activity</h3>
+        </div>
+        <button class="btn btn-sm" id="btnClearAlertsPopover">Clear log</button>
+      </div>
+      <div id="alertLogWrapPopover">${recentActivityRowsHTML()}</div>
+    `,
+    confirmLabel: 'Close',
+    onConfirm: () => true
+  });
+  document.getElementById('btnAlertTypesFromPopover').addEventListener('click', openAlertTypesModal);
+  document.getElementById('btnClearAlertsPopover').addEventListener('click', () => {
+    clearActivityLog(() => {
+      const wrap = document.getElementById('alertLogWrapPopover');
+      if(wrap) wrap.innerHTML = recentActivityRowsHTML();
+    });
+  });
+  markAlertsRead();
+}
+
+function alertsSectionHTML(){
+  return `
+    <div id="alertsSection">
+      <div class="panel">
+        <div class="panel-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="icon-btn" id="btnAlertTypesFromSettings" aria-label="Alert types" title="Alert types">${ICONS.settings}</button>
+            <div><h3>Recent activity</h3><div class="sub">Newest first \u2014 kept on this device (and synced if cloud sync is on)</div></div>
+          </div>
+          <button class="btn" id="btnClearAlerts">Clear log</button>
+        </div>
+        <div class="panel-body pad0" id="alertLogWrap">
+          ${recentActivityRowsHTML()}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function wireAlertsSection(){
+  const gearBtn = document.getElementById('btnAlertTypesFromSettings');
+  if(gearBtn) gearBtn.addEventListener('click', openAlertTypesModal);
+
+  const clearBtn = document.getElementById('btnClearAlerts');
+  if(clearBtn){
+    clearBtn.addEventListener('click', () => clearActivityLog(() => renderSettings()));
+  }
+
+  // Viewing Settings marks alerts as read.
+  markAlertsRead();
 }
 
 /* ---------------------------------------------------------------
