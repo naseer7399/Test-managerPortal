@@ -594,7 +594,6 @@ const NAV_ITEMS = [
   { id:'accounts',  label:'Accounts',  icon:'accounts',   roles:['management'] },
   { id:'reports',   label:'Reports',   icon:'reports',    roles:['management','teacher'] },
   { id:'notifications', label:'Notifications', icon:'bell', roles:['management'] },
-  { id:'alerts',    label:'Alerts',    icon:'bell',       roles:['management'] },
   { id:'settings',  label:'Settings',  icon:'settings',   roles:['management'] }
 ];
 
@@ -613,7 +612,7 @@ function renderShell(){
     <div class="badge-mark">${DB.school.logo ? `<img src="${DB.school.logo}" alt="${esc(DB.school.name)} logo">` : 'IS'}</div>
     <div><strong>${esc(DB.school.name)}</strong><span>Student and fee records</span></div>`;
   document.getElementById('navList').innerHTML = items.map(i => `
-    <button class="nav-item" data-tab="${i.id}">${ICONS[i.icon]}<span>${i.label}</span>${i.id === 'alerts' ? `<span class="nav-badge" id="alertBadge" style="display:none;"></span>` : ''}</button>
+    <button class="nav-item" data-tab="${i.id}">${ICONS[i.icon]}<span>${i.label}</span></button>
   `).join('');
   document.getElementById('sidebarFooter').innerHTML = `
     <div class="role-pill"><span class="dot"></span>${ROLE_LABELS[SESSION.role] || 'Guest'} access</div>
@@ -624,6 +623,23 @@ function renderShell(){
     btn.addEventListener('click', () => navigate(btn.dataset.tab));
   });
   document.getElementById('btnLogout').addEventListener('click', logout);
+
+  const actions = document.getElementById('topbarActions');
+  if(actions){
+    actions.innerHTML = SESSION.role === 'management'
+      ? `<button class="topbar-bell" id="btnTopbarBell" aria-label="Alerts" title="Alerts">${ICONS.bell}<span class="nav-badge" id="alertBadge" style="display:none;"></span></button>`
+      : '';
+    const bellBtn = document.getElementById('btnTopbarBell');
+    if(bellBtn){
+      bellBtn.addEventListener('click', () => {
+        navigate('settings');
+        setTimeout(() => {
+          const el = document.getElementById('alertsSection');
+          if(el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+        }, 30);
+      });
+    }
+  }
   updateAlertBadge();
 }
 
@@ -642,7 +658,6 @@ function navigate(tab, params){
     accounts: renderAccounts,
     reports: renderReports,
     notifications: renderNotifications,
-    alerts: renderAlerts,
     settings: renderSettings
   };
   (renderers[tab] || renderDashboard)();
@@ -2031,10 +2046,11 @@ function loadNotificationHistory(){
 }
 
 /* ---------------------------------------------------------------
-   Alerts — internal Management notifications
+   Alerts — internal Management notifications. Rendered as part of
+   Settings (see alertsSectionHTML/wireAlertsSection below); the
+   topbar bell button jumps straight to this section.
    --------------------------------------------------------------- */
-function renderAlerts(){
-  setTopbar('Alerts', 'Internal alerts for enrollments, fees, payments and deletions \u2014 not seen by parents');
+function alertsSectionHTML(){
   const permission = (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported';
   const permissionNote = permission === 'granted'
     ? `<span class="tag tag-active">Pop-ups allowed</span>`
@@ -2044,48 +2060,52 @@ function renderAlerts(){
         ? `<span class="tag tag-inactive">Not supported on this device</span>`
         : `<span class="tag tag-partial">Pop-ups not yet allowed</span>`;
 
-  setContent(`
-    <div class="panel">
-      <div class="panel-head">
-        <div><h3>Alert types</h3><div class="sub">Switch off any you don't need \u2014 switched-off types are neither logged nor shown as pop-ups.</div></div>
-      </div>
-      <div class="panel-body pad0">
-        ${ALERT_TYPES.map(t => `
+  return `
+    <div id="alertsSection">
+      <div class="panel">
+        <div class="panel-head">
+          <div><h3>Alert types</h3><div class="sub">Switch off any you don't need \u2014 switched-off types are neither logged nor shown as pop-ups.</div></div>
+        </div>
+        <div class="panel-body pad0">
+          ${ALERT_TYPES.map(t => `
+            <div class="alert-type-row">
+              <div class="atr-icon">${ICONS[t.icon] || ICONS.bell}</div>
+              <div class="atr-text"><div class="atr-label">${esc(t.label)}</div><div class="atr-desc">${esc(t.desc)}</div></div>
+              <label class="switch"><input type="checkbox" class="alertTypeToggle" data-type="${t.id}" ${DB.alertSettings[t.id] !== false ? 'checked' : ''}><span class="slider"></span></label>
+            </div>
+          `).join('')}
           <div class="alert-type-row">
-            <div class="atr-icon">${ICONS[t.icon] || ICONS.bell}</div>
-            <div class="atr-text"><div class="atr-label">${esc(t.label)}</div><div class="atr-desc">${esc(t.desc)}</div></div>
-            <label class="switch"><input type="checkbox" class="alertTypeToggle" data-type="${t.id}" ${DB.alertSettings[t.id] !== false ? 'checked' : ''}><span class="slider"></span></label>
+            <div class="atr-icon">${ICONS.bell}</div>
+            <div class="atr-text"><div class="atr-label">Show pop-up on this device</div><div class="atr-desc">Also show a device notification when an enabled alert happens, while the app is open. ${permissionNote}</div></div>
+            <label class="switch"><input type="checkbox" id="desktopPopupsToggle" ${DB.alertSettings.desktopPopups !== false ? 'checked' : ''}><span class="slider"></span></label>
           </div>
-        `).join('')}
-        <div class="alert-type-row">
-          <div class="atr-icon">${ICONS.bell}</div>
-          <div class="atr-text"><div class="atr-label">Show pop-up on this device</div><div class="atr-desc">Also show a device notification when an enabled alert happens, while the app is open. ${permissionNote}</div></div>
-          <label class="switch"><input type="checkbox" id="desktopPopupsToggle" ${DB.alertSettings.desktopPopups !== false ? 'checked' : ''}><span class="slider"></span></label>
+        </div>
+        ${permission === 'default' ? `<div class="panel-body" style="padding-top:0;"><button class="btn btn-primary" id="btnEnablePopups">${ICONS.bell}Allow pop-up notifications</button></div>` : ''}
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div><h3>Recent activity</h3><div class="sub">Newest first \u2014 kept on this device (and synced if cloud sync is on)</div></div>
+          <button class="btn" id="btnClearAlerts">Clear log</button>
+        </div>
+        <div class="panel-body pad0" id="alertLogWrap">
+          ${DB.alertLog.length ? `<div class="notif-history">${DB.alertLog.map(a => {
+            const meta = alertTypeMeta(a.type);
+            return `<div class="notif-history-row alert-row${a.read ? '' : ' unread'}">
+              <div class="nh-top">
+                <span class="tag tag-partial">${meta ? ICONS[meta.icon] || '' : ''}${esc(meta ? meta.label : a.type)}</span>
+                <span class="nh-time">${new Date(a.ts).toLocaleString('en-IN')}</span>
+              </div>
+              <div class="nh-title">${esc(a.title)}</div>
+              <div class="nh-msg">${esc(a.message)}</div>
+            </div>`;
+          }).join('')}</div>` : `<div class="empty-state">${ICONS.empty}<p>No activity yet. Alerts will appear here as students, fees and payments are recorded.</p></div>`}
         </div>
       </div>
-      ${permission === 'default' ? `<div class="panel-body" style="padding-top:0;"><button class="btn btn-primary" id="btnEnablePopups">${ICONS.bell}Allow pop-up notifications</button></div>` : ''}
     </div>
-    <div class="panel">
-      <div class="panel-head">
-        <div><h3>Recent activity</h3><div class="sub">Newest first \u2014 kept on this device (and synced if cloud sync is on)</div></div>
-        <button class="btn" id="btnClearAlerts">Clear log</button>
-      </div>
-      <div class="panel-body pad0" id="alertLogWrap">
-        ${DB.alertLog.length ? `<div class="notif-history">${DB.alertLog.map(a => {
-          const meta = alertTypeMeta(a.type);
-          return `<div class="notif-history-row alert-row${a.read ? '' : ' unread'}">
-            <div class="nh-top">
-              <span class="tag tag-partial">${meta ? ICONS[meta.icon] || '' : ''}${esc(meta ? meta.label : a.type)}</span>
-              <span class="nh-time">${new Date(a.ts).toLocaleString('en-IN')}</span>
-            </div>
-            <div class="nh-title">${esc(a.title)}</div>
-            <div class="nh-msg">${esc(a.message)}</div>
-          </div>`;
-        }).join('')}</div>` : `<div class="empty-state">${ICONS.empty}<p>No activity yet. Alerts will appear here as students, fees and payments are recorded.</p></div>`}
-      </div>
-    </div>
-  `);
+  `;
+}
 
+function wireAlertsSection(){
   document.querySelectorAll('.alertTypeToggle').forEach(cb => {
     cb.addEventListener('change', () => {
       DB.alertSettings[cb.dataset.type] = cb.checked;
@@ -2099,31 +2119,34 @@ function renderAlerts(){
       DB.alertSettings.desktopPopups = popupsToggle.checked;
       saveDB();
       if(popupsToggle.checked && typeof Notification !== 'undefined' && Notification.permission === 'default'){
-        requestAlertPermission(() => renderAlerts());
+        requestAlertPermission(() => renderSettings());
       }
     });
   }
   const enableBtn = document.getElementById('btnEnablePopups');
   if(enableBtn){
-    enableBtn.addEventListener('click', () => requestAlertPermission(() => renderAlerts()));
+    enableBtn.addEventListener('click', () => requestAlertPermission(() => renderSettings()));
   }
-  document.getElementById('btnClearAlerts').addEventListener('click', () => {
-    openModal({
-      title: 'Clear activity log?',
-      body: `<div class="modal-note danger">${ICONS.alert}This removes all logged alerts from this device. Alert type settings are kept.</div>`,
-      confirmLabel: 'Clear log',
-      danger: true,
-      onConfirm: () => {
-        DB.alertLog = [];
-        saveDB();
-        toast('Activity log cleared.');
-        renderAlerts();
-        return true;
-      }
+  const clearBtn = document.getElementById('btnClearAlerts');
+  if(clearBtn){
+    clearBtn.addEventListener('click', () => {
+      openModal({
+        title: 'Clear activity log?',
+        body: `<div class="modal-note danger">${ICONS.alert}This removes all logged alerts from this device. Alert type settings are kept.</div>`,
+        confirmLabel: 'Clear log',
+        danger: true,
+        onConfirm: () => {
+          DB.alertLog = [];
+          saveDB();
+          toast('Activity log cleared.');
+          renderSettings();
+          return true;
+        }
+      });
     });
-  });
+  }
 
-  // Viewing the tab marks everything as read.
+  // Viewing Settings marks alerts as read.
   if(DB.alertLog.some(a => !a.read)){
     DB.alertLog.forEach(a => { a.read = true; });
     saveDB();
@@ -2135,7 +2158,7 @@ function renderAlerts(){
    Settings
    --------------------------------------------------------------- */
 function renderSettings(){
-  setTopbar('Settings', 'School details, password and data backup');
+  setTopbar('Settings', 'School details, password, alerts and data backup');
   setContent(`
     <div class="panel">
       <div class="panel-head"><h3>Cloud sync</h3><div class="sub">Whether changes here show up for everyone using this link</div></div>
@@ -2217,6 +2240,7 @@ function renderSettings(){
         </div>
       </div>
     </div>
+    ${alertsSectionHTML()}
     <div class="panel">
       <div class="panel-head"><h3>Reset data</h3></div>
       <div class="panel-body">
@@ -2225,6 +2249,7 @@ function renderSettings(){
       </div>
     </div>
   `);
+  wireAlertsSection();
   const btnCloudSignOut = document.getElementById('btnCloudSignOut');
   if(btnCloudSignOut) btnCloudSignOut.addEventListener('click', signOutOfCloud);
   document.getElementById('btnSaveSchool').addEventListener('click', () => {
