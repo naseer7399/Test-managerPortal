@@ -53,7 +53,8 @@ const ALERT_TYPES = [
   { id:'feeCollected',           label:'Fees collected',          icon:'cash',     desc:'A payment is recorded against a student\u2019s fee.' },
   { id:'pendingBalanceBiweekly', label:'Pending balance (bi-weekly)', icon:'clock', desc:'A summary of outstanding balances, sent every two weeks.' },
   { id:'feeDeleted',             label:'Fee record deleted',      icon:'trash',    desc:'A fee record is permanently deleted.' },
-  { id:'paymentDeleted',         label:'Payment record deleted',  icon:'trash',    desc:'A payment record is permanently deleted.' }
+  { id:'paymentDeleted',         label:'Payment record deleted',  icon:'trash',    desc:'A payment record is permanently deleted.' },
+  { id:'studentDeleted',         label:'Student record deleted',  icon:'trash',    desc:'A student record is permanently deleted.' }
 ];
 
 function alertTypeMeta(id){ return ALERT_TYPES.find(t => t.id === id); }
@@ -960,6 +961,7 @@ function confirmDeleteStudent(id){
       DB.students = DB.students.filter(x => x.id !== id);
       saveDB();
       if(oldParentDocId) deleteParentDoc(oldParentDocId);
+      logAlert('studentDeleted', 'Student record deleted', `${s.name} (Admission No. ${s.id}) was permanently deleted.`);
       toast('Student deleted.');
       navigate('students');
       return true;
@@ -2045,10 +2047,9 @@ function loadNotificationHistory(){
 
 /* ---------------------------------------------------------------
    Alerts — internal Management notifications. "Recent activity" is
-   shown on the Settings page (alertsSectionHTML/wireAlertsSection)
-   and, on the Dashboard only, via the topbar bell's own modal
-   (openRecentActivityModal). "Alert types" now lives behind the gear
-   icon next to the Recent activity label in both places, as its own
+   shown on the Dashboard only, via the topbar bell's own modal
+   (openRecentActivityModal). "Alert types" lives behind the gear
+   icon next to the Recent activity label there, as its own
    modal (openAlertTypesModal).
    --------------------------------------------------------------- */
 function alertPopupPermissionNote(){
@@ -2113,7 +2114,7 @@ function wireAlertTypeToggles(onChangeRerender){
 }
 
 // Opens "Alert types" as its own modal \u2014 reached via the gear icon
-// next to the Recent activity label (both on Settings and from the bell).
+// next to the Recent activity label in the bell's popover.
 function openAlertTypesModal(){
   openModal({
     title: 'Alert types',
@@ -2189,38 +2190,6 @@ function openRecentActivityModal(){
       if(wrap) wrap.innerHTML = recentActivityRowsHTML();
     });
   });
-  markAlertsRead();
-}
-
-function alertsSectionHTML(){
-  return `
-    <div id="alertsSection">
-      <div class="panel">
-        <div class="panel-head">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <button class="icon-btn" id="btnAlertTypesFromSettings" aria-label="Alert types" title="Alert types">${ICONS.settings}</button>
-            <div><h3>Recent activity</h3><div class="sub">Newest first \u2014 kept on this device (and synced if cloud sync is on)</div></div>
-          </div>
-          <button class="btn" id="btnClearAlerts">Clear log</button>
-        </div>
-        <div class="panel-body pad0" id="alertLogWrap">
-          ${recentActivityRowsHTML()}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function wireAlertsSection(){
-  const gearBtn = document.getElementById('btnAlertTypesFromSettings');
-  if(gearBtn) gearBtn.addEventListener('click', openAlertTypesModal);
-
-  const clearBtn = document.getElementById('btnClearAlerts');
-  if(clearBtn){
-    clearBtn.addEventListener('click', () => clearActivityLog(() => renderSettings()));
-  }
-
-  // Viewing Settings marks alerts as read.
   markAlertsRead();
 }
 
@@ -2310,7 +2279,6 @@ function renderSettings(){
         </div>
       </div>
     </div>
-    ${alertsSectionHTML()}
     <div class="panel">
       <div class="panel-head"><h3>Reset data</h3></div>
       <div class="panel-body">
@@ -2319,7 +2287,6 @@ function renderSettings(){
       </div>
     </div>
   `);
-  wireAlertsSection();
   const btnCloudSignOut = document.getElementById('btnCloudSignOut');
   if(btnCloudSignOut) btnCloudSignOut.addEventListener('click', signOutOfCloud);
   document.getElementById('btnSaveSchool').addEventListener('click', () => {
